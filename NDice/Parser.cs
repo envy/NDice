@@ -264,7 +264,7 @@ namespace NDice
             {
                 if (Match(TokenType.LeftParen))
                 {
-                    expr = FinishCall(expr);
+                    expr = FinishCall(expr, Previous());
                 }
                 else
                 {
@@ -275,7 +275,7 @@ namespace NDice
             return expr;
         }
 
-        private Expr FinishCall(Expr callee)
+        private Expr FinishCall(Expr callee, Token function)
         {
             IList<Expr> arguments = new List<Expr>();
             if (!Check(TokenType.RightParen))
@@ -287,7 +287,7 @@ namespace NDice
             }
 
             Token paren = Consume(TokenType.RightParen, "Expect ')' after arguments");
-            return new Expr.Call(callee, paren, arguments);
+            return new Expr.Call(callee, function, paren, arguments);
         }
 
         private Expr Primary()
@@ -421,12 +421,14 @@ namespace NDice
         public class Call : Expr
         {
             public Expr Callee { get; }
+            public Token Function { get; }
             public Token Paren { get; }
             public IList<Expr> Arguments { get; }
 
-            public Call(Expr callee, Token paren, IList<Expr> arguments)
+            public Call(Expr callee, Token function, Token paren, IList<Expr> arguments)
             {
                 Callee = callee;
+                Function = function;
                 Paren = paren;
                 Arguments = arguments;
             }

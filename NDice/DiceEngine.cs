@@ -14,15 +14,17 @@ namespace NDice
             }
         }
 
-        public static string StaticInterpret(string expr)
+        public static string WasmInterpret(string term)
         {
             try
             {
-                return new DiceEngine().Interpret(expr).ToString();
+                var expr = new Parser(new Scanner(term).ScanTokens()).Parse();
+                var result = new DiceEngine().Interpret(expr).ToString();
+                return $"{{ \"result\": \"{result}\", \"ast\": \"{new AstPrinter().Print(expr, null)}\", \"pretty\": \"{new PrettyPrinter().PrettyPrint(expr, null)}\", \"error\": null }}";
             }
             catch (Exception e)
             {
-                return e.Message;
+                return $"{{ \"error\": \"{e.Message}\" }}";
             }
         }
 
@@ -34,6 +36,11 @@ namespace NDice
         public object Interpret(string expr, IDictionary<string, object> context)
         {
             return Interpret(new Parser(new Scanner(expr).ScanTokens()).Parse(), context);
+        }
+
+        public object Interpret(Expr expr)
+        {
+            return Interpret(expr, null);
         }
 
         private readonly Random _random = new Random();
@@ -60,13 +67,13 @@ namespace NDice
         private void CheckNumberOperand(Token @operator, object operand)
         {
             if (operand is double) return;
-            throw new InterpreterError("Operand must be a number");
+            throw new InterpreterError($"{@operator}: Operand must be a number");
         }
 
         private void CheckNumberOperand(Token @operator, object left, object right)
         {
             if (left is double && right is double) return;
-            throw new InterpreterError("Operand must be a number");
+            throw new InterpreterError($"{@operator}: Operand must be a number");
         }
 
         public object VisitTertiaryExpr(Expr.Tertiary expr)
@@ -451,81 +458,113 @@ namespace NDice
             switch (name.ToLowerInvariant())
             {
                 case "floor":
-                    if (expr.Arguments.Count == 0 || expr.Arguments.Count > 1)
-                    {
-                        throw new InterpreterError($"floor takes exactly one argument, got {expr.Arguments.Count}.");
-                    }
-                    var fres = Evaluate(expr.Arguments.First());
-                    if (!(fres is double))
-                    {
-                        throw new InterpreterError($"floor only takes numbers as arguments, got a '{fres.GetType()}'");
-                    }
-
-                    return Math.Floor((double)fres);
+                    return Floor(expr);
                 case "ceil":
                 case "ceiling":
-                    if (expr.Arguments.Count == 0 || expr.Arguments.Count > 1)
-                    {
-                        throw new InterpreterError($"ceil takes exactly one argument, got {expr.Arguments.Count}.");
-                    }
-                    var cres = Evaluate(expr.Arguments.First());
-                    if (!(cres is double))
-                    {
-                        throw new InterpreterError($"ceil only takes numbers as arguments, got a '{cres.GetType()}'");
-                    }
-
-                    return Math.Ceiling((double)cres);
+                    return Ceil(expr);
+                case "round":
+                    return Round(expr);
                 case "min":
-                    if (expr.Arguments.Count == 0)
-                    {
-                        throw new InterpreterError($"min takes at least one argument, got 0.");
-                    }
-
-                    if (expr.Arguments.Count == 1)
-                    {
-                        return Evaluate(expr.Arguments.First());
-                    }
-
-                    var firstMin = Evaluate(expr.Arguments[0]);
-                    CheckNumberOperand(null, firstMin);
-                    var secondMin = Evaluate(expr.Arguments[1]);
-                    CheckNumberOperand(null, secondMin);
-                    var currentMin = Math.Min((double)firstMin, (double)secondMin);
-                    for (var i = 2; i < expr.Arguments.Count; ++i)
-                    {
-                        var next = Evaluate(expr.Arguments[i]);
-                        CheckNumberOperand(null, next);
-                        currentMin = Math.Min(currentMin, (double) next);
-                    }
-
-                    return currentMin;
+                    return Min(expr);
                 case "max":
-                    if (expr.Arguments.Count == 0)
-                    {
-                        throw new InterpreterError($"max takes at least one argument, got 0.");
-                    }
-
-                    if (expr.Arguments.Count == 1)
-                    {
-                        return Evaluate(expr.Arguments.First());
-                    }
-
-                    var firstMax = Evaluate(expr.Arguments[0]);
-                    CheckNumberOperand(null, firstMax);
-                    var secondMax = Evaluate(expr.Arguments[1]);
-                    CheckNumberOperand(null, secondMax);
-                    var currentMax = Math.Max((double)firstMax, (double)secondMax);
-                    for (var i = 2; i < expr.Arguments.Count; ++i)
-                    {
-                        var next = Evaluate(expr.Arguments[i]);
-                        CheckNumberOperand(null, next);
-                        currentMax = Math.Max(currentMax, (double)next);
-                    }
-
-                    return currentMax;
+                    return Max(expr);
                 default:
                     throw new InterpreterError($"Unknown function '{name.ToLowerInvariant()}'");
             }
+        }
+
+        private double Floor(Expr.Call expr)
+        {
+            if (expr.Arguments.Count == 0 || expr.Arguments.Count > 1)
+            {
+                throw new InterpreterError($"floor takes exactly one argument, got {expr.Arguments.Count}.");
+            }
+            var res = Evaluate(expr.Arguments.First());
+            CheckNumberOperand(expr.Function, res);
+
+            return Math.Floor((double)res);
+        }
+
+        private double Ceil(Expr.Call expr)
+        {
+            if (expr.Arguments.Count == 0 || expr.Arguments.Count > 1)
+            {
+                throw new InterpreterError($"ceil takes exactly one argument, got {expr.Arguments.Count}.");
+            }
+            var res = Evaluate(expr.Arguments.First());
+            CheckNumberOperand(expr.Function, res);
+
+            return Math.Ceiling((double)res);
+        }
+
+        private double Round(Expr.Call expr)
+        {
+            if (expr.Arguments.Count == 0 || expr.Arguments.Count > 1)
+            {
+                throw new InterpreterError($"round takes exactly one argument, got {expr.Arguments.Count}.");
+            }
+            var res = Evaluate(expr.Arguments.First());
+            CheckNumberOperand(expr.Function, res);
+
+            return Math.Round((double)res);
+        }
+
+        private double Min(Expr.Call expr)
+        {
+            if (expr.Arguments.Count == 0)
+            {
+                throw new InterpreterError($"min takes at least one argument, got 0.");
+            }
+
+            if (expr.Arguments.Count == 1)
+            {
+                var res = Evaluate(expr.Arguments.First());
+                CheckNumberOperand(expr.Function, res);
+                return (double) res;
+            }
+
+            var firstMin = Evaluate(expr.Arguments[0]);
+            CheckNumberOperand(expr.Function, firstMin);
+            var secondMin = Evaluate(expr.Arguments[1]);
+            CheckNumberOperand(expr.Function, secondMin);
+            var currentMin = Math.Min((double)firstMin, (double)secondMin);
+            for (var i = 2; i < expr.Arguments.Count; ++i)
+            {
+                var next = Evaluate(expr.Arguments[i]);
+                CheckNumberOperand(expr.Function, next);
+                currentMin = Math.Min(currentMin, (double)next);
+            }
+
+            return currentMin;
+        }
+
+        private double Max(Expr.Call expr)
+        {
+            if (expr.Arguments.Count == 0)
+            {
+                throw new InterpreterError($"max takes at least one argument, got 0.");
+            }
+
+            if (expr.Arguments.Count == 1)
+            {
+                var res = Evaluate(expr.Arguments.First());
+                CheckNumberOperand(expr.Function, res);
+                return (double)res;
+            }
+
+            var firstMax = Evaluate(expr.Arguments[0]);
+            CheckNumberOperand(expr.Function, firstMax);
+            var secondMax = Evaluate(expr.Arguments[1]);
+            CheckNumberOperand(expr.Function, secondMax);
+            var currentMax = Math.Max((double)firstMax, (double)secondMax);
+            for (var i = 2; i < expr.Arguments.Count; ++i)
+            {
+                var next = Evaluate(expr.Arguments[i]);
+                CheckNumberOperand(expr.Function, next);
+                currentMax = Math.Max(currentMax, (double)next);
+            }
+
+            return currentMax;
         }
     }
 }
