@@ -18,6 +18,7 @@ namespace NDice
         Plus,
         Star,
         Slash,
+        Percent,
 
         Number,
         Substitution,
@@ -45,9 +46,9 @@ namespace NDice
         public string Lexeme { get; }
         public object Literal { get; }
 
-        public Token(TokenType @type, string lexeme, object literal)
+        public Token(TokenType type, string lexeme, object literal)
         {
-            Type = @type;
+            Type = type;
             Lexeme = lexeme;
             Literal = literal;
         }
@@ -146,6 +147,9 @@ namespace NDice
                     break;
                 case '/':
                     AddToken(TokenType.Slash);
+                    break;
+                case '%':
+                    AddToken(TokenType.Percent);
                     break;
                 case '!':
                     AddToken(Match('=') ? TokenType.BangEqual : TokenType.Bang);

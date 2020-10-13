@@ -145,7 +145,7 @@ namespace NDice
         {
             Expr expr = Dice();
 
-            while (Match(TokenType.Slash, TokenType.Star))
+            while (Match(TokenType.Slash, TokenType.Star, TokenType.Percent))
             {
                 Token @operator = Previous();
                 Expr right = Unary();
@@ -178,7 +178,11 @@ namespace NDice
                                 mod = Expr.Dice.DiceMod.ReRoll;
                                 break;
                             case "x":
+                            case "!":
                                 mod = Expr.Dice.DiceMod.Explode;
+                                break;
+                            case "cx":
+                                mod = Expr.Dice.DiceMod.CompoundExplode;
                                 break;
                             case "cs":
                                 mod = Expr.Dice.DiceMod.CountSuccesses;
@@ -191,30 +195,43 @@ namespace NDice
                         }
 
                         // Now there should be a operator
-                        Token tModOp = Advance();
+                        Token tModOp = Peek();
                         Expr.Dice.ModOperator modOp;
+                        Expr modValue = null;
                         switch (tModOp.Type)
                         {
                             case TokenType.Equal:
                                 modOp = Expr.Dice.ModOperator.Equal;
+                                Advance();
                                 break;
                             case TokenType.Less:
                                 modOp = Expr.Dice.ModOperator.Less;
+                                Advance();
                                 break;
                             case TokenType.LessEqual:
                                 modOp = Expr.Dice.ModOperator.LessEqual;
+                                Advance();
                                 break;
                             case TokenType.Greater:
                                 modOp = Expr.Dice.ModOperator.Greater;
+                                Advance();
                                 break;
                             case TokenType.GreaterEqual:
                                 modOp = Expr.Dice.ModOperator.GreaterEqual;
+                                Advance();
+                                break;
+                            case TokenType.Number:
+                                modOp = Expr.Dice.ModOperator.Equal;
+                                modValue = Primary();
                                 break;
                             default:
                                 throw new ParserException($"Expected dice mod operator, got '{tModOp}'.");
                         }
 
-                        Expr modValue = Call();
+                        if (modValue == null)
+                        {
+                            modValue = Call();
+                        }
                         expr = new Expr.Dice(expr, eyes, mod, modOp, modValue);
                     }
                     else
@@ -317,6 +334,7 @@ namespace NDice
                 CountSuccesses,
                 MarginOfSuccess,
                 Explode,
+                CompoundExplode,
                 ReRoll,
             }
 
@@ -334,6 +352,8 @@ namespace NDice
             public ModOperator ModOp { get; }
             public Expr ModValue { get; }
 
+            public IList<double> Results { get; }
+
             public Dice(Expr num, Expr faces)
             {
                 Num = num;
@@ -341,6 +361,7 @@ namespace NDice
                 Mod = DiceMod.None;
                 ModOp = ModOperator.Equal;
                 ModValue = null;
+                Results = new List<double>();
             }
 
             public Dice(Expr num, Expr faces, DiceMod mod, ModOperator modOp, Expr modValue)
@@ -350,6 +371,7 @@ namespace NDice
                 Mod = mod;
                 ModOp = modOp;
                 ModValue = modValue;
+                Results = new List<double>();
             }
 
             public override TR Accept<TR>(IVisitor<TR> visitor)
@@ -447,8 +469,8 @@ namespace NDice
 
         public class Literal : Expr
         {
-            public object Value { get; }
-            public bool IsSubstitution { get; }
+            public object Value { get; set; }
+            public bool IsSubstitution { get; set; }
             public Literal(object value, bool isSubstitution = false)
             {
                 Value = value;
@@ -504,6 +526,11 @@ namespace NDice
                 if (!(expr.Value is string))
                 {
                     throw new Parser.ParserException("Substitution must be a string.");
+                }
+
+                if (_context == null || !_context.ContainsKey(expr.Value.ToString()))
+                {
+                    return $"(@ {expr.Value} !KEYNOTFOUND!)";
                 }
 
                 return $"(@ {expr.Value} {_context[expr.Value.ToString()]})";

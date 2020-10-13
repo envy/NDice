@@ -45,6 +45,8 @@ namespace NDiceTests
                 yield return new TestFixtureData("1 + 42 - 21", 6, "(- (+ 1 42) 21)", 22, null);
                 yield return new TestFixtureData("1 + (42 - 21)", 8, "(+ 1 (group (- 42 21)))", 22, null);
                 yield return new TestFixtureData("(1 + 42) - 21", 8, "(- (group (+ 1 42)) 21)", 22, null);
+                yield return new TestFixtureData("3 % 2", 4, "(% 3 2)", 1, null);
+                yield return new TestFixtureData("3 % 3", 4, "(% 3 3)", 0, null);
 
                 yield return new TestFixtureData("1d6", 4, "(d 1 6)", Enumerable.Range(1, 6).ToArray(), null);
                 yield return new TestFixtureData("1d6 + 1d8", 8, "(+ (d 1 6) (d 1 8))", Enumerable.Range(2, 12).ToArray(), null);

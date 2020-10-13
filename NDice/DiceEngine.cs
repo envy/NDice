@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 
 namespace NDice
 {
@@ -12,6 +11,18 @@ namespace NDice
             public InterpreterError(string message) : base(message)
             {
 
+            }
+        }
+
+        public static string StaticInterpret(string expr)
+        {
+            try
+            {
+                return new DiceEngine().Interpret(expr).ToString();
+            }
+            catch (Exception e)
+            {
+                return e.Message;
             }
         }
 
@@ -91,6 +102,9 @@ namespace NDice
                 case TokenType.Star:
                     CheckNumberOperand(expr.Operator, left, right);
                     return (double) left * (double) right;
+                case TokenType.Percent:
+                    CheckNumberOperand(expr.Operator, left, right);
+                    return (double) left % (double) right;
                 case TokenType.Greater:
                     CheckNumberOperand(expr.Operator, left, right);
                     return (double) left > (double) right;
@@ -116,6 +130,8 @@ namespace NDice
         {
             if (a == null && b == null) return true;
             if (a == null) return false;
+            if (a is double da && b is double db)
+                return Math.Abs(da - db) < 0.00001;
             return a.Equals(b);
         }
 
@@ -155,14 +171,21 @@ namespace NDice
                 {
                     throw new InterpreterError("Substitution must be a string.");
                 }
-                return _context[expr.Value.ToString()];
+
+                if (_context == null || !(_context.ContainsKey(expr.Value.ToString())))
+                {
+                    throw new InterpreterError($"Context does not contain key '{expr.Value}'");
+                }
+
+                expr.Value = _context[expr.Value.ToString()];
+                expr.IsSubstitution = false;
             }
             return expr.Value;
         }
 
-        private int RollDie(int eyes)
+        private int RollDie(int faces)
         {
-            return _random.Next(1, eyes);
+            return _random.Next(1, faces + 1);
         }
 
         public object VisitDiceExpr(Expr.Dice dice)
@@ -170,14 +193,14 @@ namespace NDice
             var _num = Evaluate(dice.Num);
             if (!(_num is double))
             {
-                throw new InterpreterError("Dice number must be a number!");
+                throw new InterpreterError($"Dice number must be a number but is a {_num.GetType()}!");
             }
             var num = (int)Math.Round((double) _num);
 
             var _faces = Evaluate(dice.Faces);
             if (!(_faces is double))
             {
-                throw new InterpreterError("Dice eyes must be a number!");
+                throw new InterpreterError($"Dice faces must be a number but is a {_faces.GetType()}!");
             }
             var faces = (int)Math.Round((double) _faces);
 
@@ -186,22 +209,24 @@ namespace NDice
                 var _modValue = Evaluate(dice.ModValue);
                 if (!(_modValue is double))
                 {
-                    throw new InterpreterError("Dice mod value must be a number!");
+                    throw new InterpreterError($"Dice mod value must be a number but is a {_modValue.GetType()}!");
                 }
 
-                var modValue = (int) Math.Round((double) _modValue);
+                var modValue = (double) _modValue;
 
                 switch (dice.Mod)
                 {
                     case Expr.Dice.DiceMod.CountSuccesses:
+                    {
                         var successes = 0;
                         for (var i = 0; i < num; ++i)
                         {
                             var candidate = RollDie(faces);
-                            switch (dice.ModOp)
+                            dice.Results.Add(candidate);
+                                switch (dice.ModOp)
                             {
                                 case Expr.Dice.ModOperator.Equal:
-                                    successes += candidate == modValue ? 1 : 0;
+                                    successes += Math.Abs(candidate - modValue) < 0.00001 ? 1 : 0;
                                     break;
                                 case Expr.Dice.ModOperator.Less:
                                     successes += candidate < modValue ? 1 : 0;
@@ -220,12 +245,17 @@ namespace NDice
                                     throw new InterpreterError($"Unknown dice mod operator: '{dice.ModOp}'");
                             }
                         }
+
                         return (double) successes;
+                    }
                     case Expr.Dice.DiceMod.MarginOfSuccess:
-                        var result = 0;
+                    {
+                        var result = 0.0d;
                         for (var i = 0; i < num; ++i)
                         {
-                            result += RollDie(faces);
+                            var tmp = RollDie(faces);
+                            dice.Results.Add(tmp);
+                            result += tmp;
                         }
 
                         switch (dice.ModOp)
@@ -242,15 +272,168 @@ namespace NDice
                             default:
                                 throw new InterpreterError($"Unknown dice mod operator: '{dice.ModOp}'");
                         }
-                        return (double)result;
 
+                        return result;
+                    }
+                    case Expr.Dice.DiceMod.ReRoll:
+                    {
+                        var result = 0.0d;
+                        for (var i = 0; i < num; ++i)
+                        {
+                            var tmp = RollDie(faces);
+                            switch (dice.ModOp)
+                            { 
+                                case Expr.Dice.ModOperator.Equal:
+                                    while (Math.Abs(tmp - modValue) < 0.00001)
+                                    {
+                                        tmp = RollDie(faces);
+                                    }
+                                    break;
+                                case Expr.Dice.ModOperator.Greater:
+                                    while (tmp > modValue)
+                                    {
+                                        tmp = RollDie(faces);
+                                    }
+                                    break;
+                                case Expr.Dice.ModOperator.GreaterEqual:
+                                    while (tmp >= modValue)
+                                    {
+                                        tmp = RollDie(faces);
+                                    }
+                                    break;
+                                case Expr.Dice.ModOperator.Less:
+                                    while (tmp < modValue)
+                                    {
+                                        tmp = RollDie(faces);
+                                    }
+                                    break;
+                                case Expr.Dice.ModOperator.LessEqual:
+                                    while (tmp <= modValue)
+                                    {
+                                        tmp = RollDie(faces);
+                                    }
+                                    break;
+                            }
+
+                            dice.Results.Add(tmp);
+                            result += tmp;
+                        }
+
+                        return result;
+                    }
+                    case Expr.Dice.DiceMod.Explode:
+                    {
+                        var result = 0.0d;
+                        for (var i = 0; i < num; ++i)
+                        {
+                            var tmp = RollDie(faces);
+                            switch (dice.ModOp)
+                            {
+                                case Expr.Dice.ModOperator.Equal:
+                                    if (Math.Abs(tmp - modValue) < 0.00001)
+                                    {
+                                        num++;
+                                    }
+
+                                    break;
+                                case Expr.Dice.ModOperator.Greater:
+                                    if (tmp > modValue)
+                                    {
+                                        num++;
+                                    }
+
+                                    break;
+                                case Expr.Dice.ModOperator.GreaterEqual:
+                                    if (tmp >= modValue)
+                                    {
+                                        num++;
+                                    }
+
+                                    break;
+                                case Expr.Dice.ModOperator.Less:
+                                    if (tmp < modValue)
+                                    {
+                                        num++;
+                                    }
+
+                                    break;
+                                case Expr.Dice.ModOperator.LessEqual:
+                                    if (tmp <= modValue)
+                                    {
+                                        num++;
+                                    }
+
+                                    break;
+                            }
+
+                            dice.Results.Add(tmp);
+                            result += tmp;
+                        }
+
+                        return result;
+                    }
+                    case Expr.Dice.DiceMod.CompoundExplode:
+                    {
+                        var result = 0.0d;
+                        for (var i = 0; i < num; ++i)
+                        {
+                            var compundSum = 0.0d;
+                            var tmp = RollDie(faces);
+                            compundSum += tmp;
+                            switch (dice.ModOp)
+                            {
+                                case Expr.Dice.ModOperator.Equal:
+                                    while (Math.Abs(tmp - modValue) < 0.00001)
+                                    {
+                                        tmp = RollDie(faces);
+                                        compundSum += tmp;
+                                    }
+                                    break;
+                                case Expr.Dice.ModOperator.Greater:
+                                    while (tmp > modValue)
+                                    {
+                                        tmp = RollDie(faces);
+                                        compundSum += tmp;
+                                    }
+                                    break;
+                                case Expr.Dice.ModOperator.GreaterEqual:
+                                    while (tmp >= modValue)
+                                    {
+                                        tmp = RollDie(faces);
+                                        compundSum += tmp;
+                                    }
+                                    break;
+                                case Expr.Dice.ModOperator.Less:
+                                    while (tmp < modValue)
+                                    {
+                                        tmp = RollDie(faces);
+                                        compundSum += tmp;
+                                    }
+                                    break;
+                                case Expr.Dice.ModOperator.LessEqual:
+                                    while (tmp <= modValue)
+                                    {
+                                        tmp = RollDie(faces);
+                                        compundSum += tmp;
+                                    }
+                                    break;
+                            }
+
+                            dice.Results.Add(compundSum);
+                            result += compundSum;
+                        }
+
+                        return result;
+                    }
                 }
             }
 
             var rollingSum = 0;
             for (var i = 0; i < num; ++i)
             {
-                rollingSum += RollDie(faces);
+                var tmp = RollDie(faces);
+                dice.Results.Add(tmp);
+                rollingSum += tmp;
             }
 
             return (double)rollingSum;

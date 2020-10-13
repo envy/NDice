@@ -34,7 +34,10 @@ namespace NDiceCLI
                     Console.WriteLine($"TKN: {TokensToString(tokens)}");
                     var expr = new Parser(tokens).Parse();
                     Console.WriteLine($"AST: {new AstPrinter().Print(expr, null)}");
-                    Console.WriteLine($"RES: {de.Interpret(expr, null)}");
+                    Console.WriteLine("======");
+                    var result = de.Interpret(expr, null);
+                    Console.WriteLine(new PrettyPrinter().PrettyPrint(expr, null));
+                    Console.WriteLine($"RES: {result}");
                 }
                 catch (Exception e)
                 {
