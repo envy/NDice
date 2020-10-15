@@ -94,12 +94,6 @@ Functions (`floor`, `ceil`, `round`, `min`, `max`)
 5
 ```
 
-## TODO
-
-- Record dice rolls and show their result without applying all the math
-- Modulo
-
-
 ## Misc
 
 This code is heavily based on the Java code for Lox, the language from http://www.craftinginterpreters.com, mainly chapter two.
