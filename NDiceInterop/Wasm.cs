@@ -1,6 +1,7 @@
 ﻿using System;
 using NDice;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace NDiceInterop
 {
@@ -12,6 +13,16 @@ namespace NDiceInterop
             public string Ast { get; set; }
             public string Pretty { get; set; }
             public string Error { get; set; }
+        }
+
+        private static readonly JsonSerializerSettings Settings;
+
+        static Wasm()
+        {
+            Settings = new JsonSerializerSettings
+            {
+                ContractResolver = new DefaultContractResolver() {NamingStrategy = new CamelCaseNamingStrategy()}
+            };
         }
 
         public static string Interpret(string term)
@@ -32,7 +43,7 @@ namespace NDiceInterop
                 interpretResult.Error = e.Message;
             }
 
-            return JsonConvert.SerializeObject(interpretResult);
+            return JsonConvert.SerializeObject(interpretResult, Settings);
         }
     }
 }
