@@ -6,7 +6,7 @@ Embed into your project or use the CLI to play around.
 
 ## Supported operations
 
-Arithmetic (`+`, `-`, `*`, `/`)
+Arithmetic (`+`, `-`, `*`, `/`, `%`)
 ```text
 > 1 + 5
 6
@@ -47,6 +47,16 @@ Dice modifiers (`<num>d<faces>[<modifier><operator><argument>]`)
 > 6d6cs>4
 2
 ```
+Valid modifiers are `cs` (count successes), `x` (explode), `cx` (compound explode), `ms` (margin of success), `r` (reroll), `kh` (keep higehst), `kl` (keep lowest), `dh` (drop highest), `dl` (drop lowest).
+
+Dice pools (`{<expr>[, <expr>[, ...]]}<modifier><operator><argument>`)
+```text
+> {1, 2, 3}kh=1
+3
+
+> {}
+```
+Valid modifiers are `cs` (count successes), `kh` (keep higehst), `kl` (keep lowest), `dh` (drop highest), `dl` (drop lowest).
 
 Comparison (`==`, `!=`, `<`, `<=`, `>=`, `>`, `<condition> ? <true-branch> : <false-branch>`)
 ```text
@@ -66,7 +76,7 @@ True
 20
 ```
 
-Functions (`floor`, `ceil`, `min`, `max`)
+Functions (`floor`, `ceil`, `round`, `min`, `max`)
 ```text
 > 1.5
 1.5
@@ -92,5 +102,5 @@ Functions (`floor`, `ceil`, `min`, `max`)
 
 ## Misc
 
-This code is heavily based on the Java code for Lox, the language from [http://www.craftinginterpreters.com], mainly chapter two.
+This code is heavily based on the Java code for Lox, the language from http://www.craftinginterpreters.com, mainly chapter two.
 Check it out if you want to lern how to build interpreters!

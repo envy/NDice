@@ -25,6 +25,7 @@ namespace NDice
         Identifier,
 
         Bang,
+        BangBang,
         Less,
         Greater,
         Equal,
@@ -152,7 +153,15 @@ namespace NDice
                     AddToken(TokenType.Percent);
                     break;
                 case '!':
-                    AddToken(Match('=') ? TokenType.BangEqual : TokenType.Bang);
+                    if (Peek() == '!')
+                    {
+                        Advance();
+                        AddToken(TokenType.BangBang);
+                    }
+                    else
+                    {
+                        AddToken(Match('=') ? TokenType.BangEqual : TokenType.Bang);
+                    }
                     break;
                 case '=':
                     AddToken(Match('=') ? TokenType.EqualEqual : TokenType.Equal);

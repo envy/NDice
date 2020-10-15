@@ -14,20 +14,6 @@ namespace NDice
             }
         }
 
-        public static string WasmInterpret(string term)
-        {
-            try
-            {
-                var expr = new Parser(new Scanner(term).ScanTokens()).Parse();
-                var result = new DiceEngine().Interpret(expr).ToString();
-                return $"{{ \"result\": \"{result}\", \"ast\": \"{new AstPrinter().Print(expr, null)}\", \"pretty\": \"{new PrettyPrinter().PrettyPrint(expr, null)}\", \"error\": null }}";
-            }
-            catch (Exception e)
-            {
-                return $"{{ \"error\": \"{e.Message}\" }}";
-            }
-        }
-
         public object Interpret(string expr)
         {
             return Interpret(expr, null);
@@ -197,63 +183,60 @@ namespace NDice
 
         public object VisitDiceExpr(Expr.Dice dice)
         {
-            var _num = Evaluate(dice.Num);
-            if (!(_num is double))
+            if (dice.Results.Count > 0)
             {
-                throw new InterpreterError($"Dice number must be a number but is a {_num.GetType()}!");
+                // dice were already rolled.
+                return dice.Result;
             }
-            var num = (int)Math.Round((double) _num);
 
-            var _faces = Evaluate(dice.Faces);
-            if (!(_faces is double))
+            var oNum = Evaluate(dice.Num);
+            if (!(oNum is double))
             {
-                throw new InterpreterError($"Dice faces must be a number but is a {_faces.GetType()}!");
+                throw new InterpreterError($"Dice number must be a number but is a {oNum.GetType()}!");
             }
-            var faces = (int)Math.Round((double) _faces);
+            var num = (int)Math.Round((double) oNum);
+
+            var oFaces = Evaluate(dice.Faces);
+            if (!(oFaces is double))
+            {
+                throw new InterpreterError($"Dice faces must be a number but is a {oFaces.GetType()}!");
+            }
+            var faces = (int)Math.Round((double) oFaces);
 
             if (dice.Mod != Expr.Dice.DiceMod.None)
             {
-                var _modValue = Evaluate(dice.ModValue);
-                if (!(_modValue is double))
+                var oModValue = Evaluate(dice.ModValue);
+                if (!(oModValue is double))
                 {
-                    throw new InterpreterError($"Dice mod value must be a number but is a {_modValue.GetType()}!");
+                    throw new InterpreterError($"Dice mod value must be a number but is a {oModValue.GetType()}!");
                 }
 
-                var modValue = (double) _modValue;
+                var modValue = (double) oModValue;
 
                 switch (dice.Mod)
                 {
                     case Expr.Dice.DiceMod.CountSuccesses:
                     {
-                        var successes = 0;
                         for (var i = 0; i < num; ++i)
                         {
-                            var candidate = RollDie(faces);
-                            dice.Results.Add(candidate);
-                                switch (dice.ModOp)
-                            {
-                                case Expr.Dice.ModOperator.Equal:
-                                    successes += Math.Abs(candidate - modValue) < 0.00001 ? 1 : 0;
-                                    break;
-                                case Expr.Dice.ModOperator.Less:
-                                    successes += candidate < modValue ? 1 : 0;
-                                    break;
-                                case Expr.Dice.ModOperator.LessEqual:
-                                    successes += candidate <= modValue ? 1 : 0;
-                                    break;
-                                case Expr.Dice.ModOperator.Greater:
-                                    successes += candidate > modValue ? 1 : 0;
-                                    break;
-                                case Expr.Dice.ModOperator.GreaterEqual:
-                                    successes += candidate >= modValue ? 1 : 0;
-                                    break;
-
-                                default:
-                                    throw new InterpreterError($"Unknown dice mod operator: '{dice.ModOp}'");
-                            }
+                            dice.Results.Add(RollDie(faces));
                         }
 
-                        return (double) successes;
+                        switch (dice.ModOp)
+                        {
+                            case Expr.Dice.ModOperator.Equal:
+                                return dice.Result = dice.Results.Count(d => Math.Abs(d - modValue) < 0.00001);
+                            case Expr.Dice.ModOperator.Less:
+                                return dice.Result = dice.Results.Count(d => d < modValue);
+                            case Expr.Dice.ModOperator.LessEqual:
+                                return dice.Result =  dice.Results.Count(d => d <= modValue);
+                            case Expr.Dice.ModOperator.Greater:
+                                return dice.Result =  dice.Results.Count(d => d > modValue);
+                            case Expr.Dice.ModOperator.GreaterEqual:
+                                return dice.Result = dice.Results.Count(d => d >= modValue);
+                            default:
+                                throw new InterpreterError($"Unknown dice mod operator: '{dice.ModOp}'");
+                        }
                     }
                     case Expr.Dice.DiceMod.MarginOfSuccess:
                     {
@@ -280,7 +263,7 @@ namespace NDice
                                 throw new InterpreterError($"Unknown dice mod operator: '{dice.ModOp}'");
                         }
 
-                        return result;
+                        return dice.Result = result;
                     }
                     case Expr.Dice.DiceMod.ReRoll:
                     {
@@ -326,7 +309,7 @@ namespace NDice
                             result += tmp;
                         }
 
-                        return result;
+                        return dice.Result = result;
                     }
                     case Expr.Dice.DiceMod.Explode:
                     {
@@ -377,7 +360,7 @@ namespace NDice
                             result += tmp;
                         }
 
-                        return result;
+                        return dice.Result = result;
                     }
                     case Expr.Dice.DiceMod.CompoundExplode:
                     {
@@ -430,8 +413,42 @@ namespace NDice
                             result += compundSum;
                         }
 
-                        return result;
+                        return dice.Result = result;
                     }
+                    case Expr.Dice.DiceMod.KeepHighest:
+                    {
+                        for (var i = 0; i < num; ++i)
+                        {
+                            dice.Results.Add(RollDie(faces));
+                        }
+                        return dice.Result = dice.Results.OrderByDescending(d => d).Take(Convert.ToInt32(modValue)).Sum();
+                    }
+                    case Expr.Dice.DiceMod.KeepLowest:
+                    {
+                        for (var i = 0; i < num; ++i)
+                        {
+                            dice.Results.Add(RollDie(faces));
+                        }
+                        return dice.Result = dice.Results.OrderBy(d => d).Take(Convert.ToInt32(modValue)).Sum();
+                    }
+                    case Expr.Dice.DiceMod.DropHighest:
+                    {
+                        for (var i = 0; i < num; ++i)
+                        {
+                            dice.Results.Add(RollDie(faces));
+                        }
+                        return dice.Result = dice.Results.OrderByDescending(d => d).Skip(Convert.ToInt32(modValue)).Sum();
+                    }
+                    case Expr.Dice.DiceMod.DropLowest:
+                    {
+                        for (var i = 0; i < num; ++i)
+                        {
+                            dice.Results.Add(RollDie(faces));
+                        }
+                        return dice.Result = dice.Results.OrderBy(d => d).Skip(Convert.ToInt32(modValue)).Sum();
+                    }
+                    default:
+                        throw new InterpreterError($"Unknown dice modifier '{dice.Mod}'");
                 }
             }
 
@@ -443,7 +460,110 @@ namespace NDice
                 rollingSum += tmp;
             }
 
-            return (double)rollingSum;
+            return dice.Result = rollingSum;
+        }
+
+        public object VisitDicePoolExpr(Expr.DicePool expr)
+        {
+            switch (expr.Mod)
+            {
+                case Expr.DicePool.DicePoolMod.KeepHighest:
+                {
+                    var results = new List<double>();
+                    foreach (var argument in expr.Arguments)
+                    {
+                        var result = argument.Accept(this);
+                        CheckNumberOperand(null, result);
+                        results.Add((double) result);
+                    }
+
+                    var modValue = expr.ModValue.Accept(this);
+                    CheckNumberOperand(null, modValue);
+
+                    results.Sort();
+                    results.Reverse();
+                    return results.Take(Convert.ToInt32(modValue)).Sum();
+                }
+                case Expr.DicePool.DicePoolMod.KeepLowest:
+                {
+                    var results = new List<double>();
+                    foreach (var argument in expr.Arguments)
+                    {
+                        var result = argument.Accept(this);
+                        CheckNumberOperand(null, result);
+                        results.Add((double)result);
+                    }
+
+                    var modValue = expr.ModValue.Accept(this);
+                    CheckNumberOperand(null, modValue);
+
+                    results.Sort();
+                    return results.Take(Convert.ToInt32(modValue)).Sum();
+                }
+                case Expr.DicePool.DicePoolMod.DropHighest:
+                {
+                    var results = new List<double>();
+                    foreach (var argument in expr.Arguments)
+                    {
+                        var result = argument.Accept(this);
+                        CheckNumberOperand(null, result);
+                        results.Add((double)result);
+                    }
+
+                    var modValue = expr.ModValue.Accept(this);
+                    CheckNumberOperand(null, modValue);
+
+                    results.Sort();
+                    results.Reverse();
+                    return results.Skip(Convert.ToInt32(modValue)).Sum();
+                }
+                case Expr.DicePool.DicePoolMod.DropLowest:
+                {
+                    var results = new List<double>();
+                    foreach (var argument in expr.Arguments)
+                    {
+                        var result = argument.Accept(this);
+                        CheckNumberOperand(null, result);
+                        results.Add((double)result);
+                    }
+
+                    var modValue = expr.ModValue.Accept(this);
+                    CheckNumberOperand(null, modValue);
+
+                    results.Sort();
+                    return results.Skip(Convert.ToInt32(modValue)).Sum();
+                }
+                case Expr.DicePool.DicePoolMod.CountSuccesses:
+                {
+                    var results = new List<double>();
+                    foreach (var argument in expr.Arguments)
+                    {
+                        var result = argument.Accept(this);
+                        CheckNumberOperand(null, result);
+                        results.Add((double)result);
+                    }
+
+                    var modValue = expr.ModValue.Accept(this);
+                    CheckNumberOperand(null, modValue);
+                    switch (expr.ModOp)
+                    {
+                        case Expr.DicePool.ModOperator.Equal:
+                            return (double) results.Count(d => Math.Abs(d - (double)modValue) < 0.00001);
+                        case Expr.DicePool.ModOperator.Less:
+                            return (double) results.Count(d => d < (double) modValue);
+                        case Expr.DicePool.ModOperator.LessEqual:
+                            return (double) results.Count(d => d <= (double)modValue);
+                        case Expr.DicePool.ModOperator.Greater:
+                            return (double) results.Count(d => d > (double)modValue);
+                        case Expr.DicePool.ModOperator.GreaterEqual:
+                            return (double) results.Count(d => d >= (double)modValue);
+                        default:
+                            throw new InterpreterError($"Invalid dice pool modifier operator '{expr.ModOp}' for '{expr.Mod}'");
+                    }
+                }
+                default:
+                    throw new InterpreterError($"Unknown dice pool modifier '{expr.Mod}'");
+            }
         }
 
         public object VisitCallExpr(Expr.Call expr)
