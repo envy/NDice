@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Linq.Expressions;
 
 namespace NDice
 {
@@ -148,7 +149,7 @@ namespace NDice
             while (Match(TokenType.Slash, TokenType.Star, TokenType.Percent))
             {
                 Token @operator = Previous();
-                Expr right = Unary();
+                Expr right = Dice();
                 expr = new Expr.Binary(expr, @operator, right);
             }
 
@@ -165,22 +166,36 @@ namespace NDice
                 Token id = Previous();
                 if ("d".Equals(id.Lexeme) || "D".Equals(id.Lexeme))
                 {
-                    Expr faces = Call();
+                    Expr faces = Call(false);
 
                     // Check for modifiers
                     if (Match(TokenType.Identifier, TokenType.Bang, TokenType.BangBang))
                     {
                         GetDiceModifiers(faces, out var mod, out var modOp, out var modValue);
-                        expr = new Expr.Dice(expr, faces, mod, modOp, modValue);
+                        expr = new Expr.Dice(expr, faces, GetLabel(), mod, modOp, modValue);
                     }
                     else
                     {
-                        expr = new Expr.Dice(expr, faces);
+                        expr = new Expr.Dice(expr, faces, GetLabel());
                     }
                 }
             }
 
             return expr;
+        }
+
+        private string GetLabel()
+        {
+            if (!Check(TokenType.LeftBracket)) return null;
+            Advance();
+            var label = "";
+            while (Check(TokenType.Identifier))
+            {
+                label = string.IsNullOrEmpty(label) ? Advance().Lexeme : label + " " + Advance().Lexeme;
+            }
+//            Consume(TokenType.Identifier, "Expect string after '['.").Lexeme;
+            Consume(TokenType.RightBracket, "Expect ']' after label.");
+            return label;
         }
 
         private void GetDiceModifiers(Expr faces, out Expr.Dice.DiceMod mod, out Expr.Dice.ModOperator modOp, out Expr modValue)
@@ -291,9 +306,9 @@ namespace NDice
             return Call();
         }
 
-        private Expr Call()
+        private Expr Call(bool consumeLabel = true)
         {
-            Expr expr = Primary();
+            Expr expr = Primary(consumeLabel);
 
             while (true)
             {
@@ -326,14 +341,14 @@ namespace NDice
             return new Expr.Call(callee, function, paren, arguments);
         }
 
-        private Expr Primary()
+        private Expr Primary(bool consumeLabel = true)
         {
             if (Match(TokenType.False)) return new Expr.Literal(false);
             if (Match(TokenType.True)) return new Expr.Literal(true);
             
             if (Match(TokenType.Number, TokenType.Substitution))
             {
-                return new Expr.Literal(Previous().Literal, Previous().Type == TokenType.Substitution);
+                return new Expr.Literal(Previous().Literal, Previous().Type == TokenType.Substitution, consumeLabel ? GetLabel() : null);
             }
 
             if (Match(TokenType.LeftBrace))
@@ -484,11 +499,12 @@ namespace NDice
             public DiceMod Mod { get; }
             public ModOperator ModOp { get; }
             public Expr ModValue { get; }
+            public string Label { get; }
 
             public List<double> Results { get; }
             public double Result { get; set; }
 
-            public Dice(Expr num, Expr faces)
+            public Dice(Expr num, Expr faces, string label)
             {
                 Num = num;
                 Faces = faces;
@@ -497,9 +513,10 @@ namespace NDice
                 ModValue = null;
                 Results = new List<double>();
                 Result = -1;
+                Label = label;
             }
 
-            public Dice(Expr num, Expr faces, DiceMod mod, ModOperator modOp, Expr modValue)
+            public Dice(Expr num, Expr faces, string label, DiceMod mod, ModOperator modOp, Expr modValue)
             {
                 Num = num;
                 Faces = faces;
@@ -508,6 +525,7 @@ namespace NDice
                 ModValue = modValue;
                 Results = new List<double>();
                 Result = -1;
+                Label = label;
             }
 
             public override TR Accept<TR>(IVisitor<TR> visitor)
@@ -647,10 +665,12 @@ namespace NDice
         {
             public object Value { get; set; }
             public bool IsSubstitution { get; set; }
-            public Literal(object value, bool isSubstitution = false)
+            public string Label { get; }
+            public Literal(object value, bool isSubstitution = false, string label = null)
             {
                 Value = value;
                 IsSubstitution = isSubstitution;
+                Label = label;
             }
 
             public override TR Accept<TR>(IVisitor<TR> visitor)
@@ -694,7 +714,7 @@ namespace NDice
         {
             if (expr.Value is double d)
             {
-                return d.ToString(NumberFormatInfo.InvariantInfo);
+                return string.IsNullOrEmpty(expr.Label) ? d.ToString(NumberFormatInfo.InvariantInfo) : $"{d.ToString(NumberFormatInfo.InvariantInfo)}[{expr.Label}]";
             }
 
             if (expr.IsSubstitution)
@@ -711,15 +731,17 @@ namespace NDice
 
                 return $"(@ {expr.Value} {_context[expr.Value.ToString()]})";
             }
-            return expr.Value.ToString();
+            return string.IsNullOrEmpty(expr.Label) ? expr.Value.ToString() : $"{expr.Value}[{expr.Label}]";
         }
 
         public string VisitDiceExpr(Expr.Dice expr)
         {
-            if (expr.Mod == Expr.Dice.DiceMod.None)
-                return Parenthesize("d", expr.Num, expr.Faces);
+            var label = string.IsNullOrEmpty(expr.Label) ? "" : $" [{expr.Label}]";
 
-            return $"(d {expr.Num.Accept(this)} {expr.Faces.Accept(this)} {expr.Mod} {expr.ModOp} {expr.ModValue.Accept(this)})";
+            if (expr.Mod == Expr.Dice.DiceMod.None)
+                return $"(d {expr.Num.Accept(this)} {expr.Faces.Accept(this)}{label})";
+
+            return $"(d {expr.Num.Accept(this)} {expr.Faces.Accept(this)} {expr.Mod} {expr.ModOp} {expr.ModValue.Accept(this)}{label})";
         }
 
         public string VisitDicePoolExpr(Expr.DicePool expr)

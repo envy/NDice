@@ -45,7 +45,7 @@ namespace NDice
 
         public string VisitLiteralExpr(Expr.Literal expr)
         {
-            return expr.Value.ToString();
+            return string.IsNullOrEmpty(expr.Label) ? expr.Value.ToString() : $"{expr.Value}[{expr.Label}]";
         }
 
         private string DiceModToString(Expr.Dice.DiceMod mod)
@@ -103,6 +103,11 @@ namespace NDice
             if (dice.Mod != Expr.Dice.DiceMod.None)
             {
                 s += $"{DiceModToString(dice.Mod)}{DiceModOpToString(dice.ModOp)}{dice.ModValue.Accept(this)}";
+            }
+
+            if (!string.IsNullOrEmpty(dice.Label))
+            {
+                s += $"[{dice.Label}]";
             }
             return s;
         }
